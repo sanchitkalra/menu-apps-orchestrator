@@ -1,0 +1,4 @@
+{
+  "_comment": "Copy to ~/Orchestrator/Data/prs/config.json and fill in. Requires gh to be authenticated for this repo.",
+  "repo": "your-org/your-repo"
+}

@@ -1,0 +1,12 @@
+{
+  "_comment": "Copy to ~/Orchestrator/Data/cards/config.json and fill in. Never committed — the password stays in ~/.pgpass.",
+  "host": "your-db-host.rds.amazonaws.com",
+  "port": "5432",
+  "database": "your_db",
+  "user": "your_ro_user",
+  "psql": "/opt/homebrew/bin/psql",
+  "query": "select count(*) from your_table where ...",
+  "label": "Cards",
+  "title": "Active Cards",
+  "subtitle": "what this count means"
+}

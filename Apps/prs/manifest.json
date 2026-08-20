@@ -1,0 +1,10 @@
+{
+  "id": "prs",
+  "name": "PRs",
+  "version": "0.1.0",
+  "entrypoint": "node index.js",
+  "lifecycle": "ephemeral",
+  "tile": {"size":"2x1"},
+  "schedule": {"interval":"1m"},
+  "permissions": ["store","shell.exec"]
+}
