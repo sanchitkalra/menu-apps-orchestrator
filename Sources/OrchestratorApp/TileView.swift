@@ -5,6 +5,9 @@ import OrchestratorCore
 // Maps DSL Node -> SwiftUI. This target only builds with Xcode.
 struct TileView: View {
     let node: Node
+    let onAction: (String, [String: String]?) -> Void
+    @State private var formValues: [String: String] = [:]
+
     var body: some View {
         render(node)
     }
@@ -13,16 +16,16 @@ struct TileView: View {
         switch node {
         case .vstack(let gap, let children):
             VStack(alignment: .leading, spacing: gap == "sm" ? 4 : 8) {
-                ForEach(Array(children.enumerated()), id: \.offset) { _, c in render(c) }
+                ForEach(Array(children.enumerated()), id: \.offset) { _, c in TileView(node: c, onAction: onAction) }
             }
         case .hstack(let gap, let children):
             HStack(alignment: .top, spacing: gap == "sm" ? 4 : 8) {
-                ForEach(Array(children.enumerated()), id: \.offset) { _, c in render(c) }
+                ForEach(Array(children.enumerated()), id: \.offset) { _, c in TileView(node: c, onAction: onAction) }
             }
         case .card(let title, let children):
             VStack(alignment: .leading, spacing: 8) {
                 if let title { Text(title).font(.headline) }
-                ForEach(Array(children.enumerated()), id: \.offset) { _, c in render(c) }
+                ForEach(Array(children.enumerated()), id: \.offset) { _, c in TileView(node: c, onAction: onAction) }
             }.padding().background(RoundedRectangle(cornerRadius: 12).fill(Color(NSColor.controlBackgroundColor)))
         case .text(let text, let variant, let color):
             Text(text).font(variant == "title" ? .headline : variant == "caption" ? .caption : .body)
@@ -43,6 +46,8 @@ struct TileView: View {
                         Spacer()
                         if let r = item.right { Text(r).font(.caption).foregroundColor(.secondary) }
                     }
+                    .contentShape(Rectangle())
+                    .onTapGesture { if let a = item.onClick { onAction(a.id, a.payload) } }
                 }
             }
         case .progress(let v):
@@ -51,13 +56,20 @@ struct TileView: View {
             SparklineView(data: data)
         case .icon(let name, _):
             Image(systemName: name).foregroundColor(.secondary)
-        case .button(let label, _, _):
-            Button(label) {}
+        case .button(let label, _, let onClick):
+            Button(label) { onAction(onClick.id, onClick.payload) }
                 .buttonStyle(.bordered)
-        case .form(let fields, _):
+        case .form(let fields, let onSubmit):
             ForEach(fields, id: \.name) { f in
-                TextField(f.placeholder, text: .constant(""))
-                    .textFieldStyle(.roundedBorder)
+                TextField(f.placeholder, text: Binding(
+                    get: { formValues[f.name] ?? "" },
+                    set: { formValues[f.name] = $0 }
+                ))
+                .textFieldStyle(.roundedBorder)
+                .onSubmit {
+                    onAction(onSubmit.id, formValues.merging(onSubmit.payload ?? [:]) { a, _ in a })
+                    formValues = [:]
+                }
             }
         }
     }

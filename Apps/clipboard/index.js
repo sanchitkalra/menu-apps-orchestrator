@@ -2,6 +2,7 @@ let buf=""; const pending=new Map(); let nid=1;
 function send(m){process.stdout.write(JSON.stringify(m)+"\n");}
 function call(m,p){const id=nid++;return new Promise(r=>{pending.set(id,r);send({id,method:m,params:p})});}
 const host={store:{get:k=>call("host.store.get",{key:k}),set:(k,v)=>call("host.store.set",{key:k,value:JSON.stringify(v)})},shell:{exec:cmd=>call("host.shell.exec",{cmd})},render:p=>send({method:"render",params:JSON.stringify(p)})};
+const shq=s=>"'"+String(s).replace(/'/g,"'\\''")+"'";  // shell single-quote
 let history=[];
 async function onInit(){
   try{ history=JSON.parse(await host.store.get("history")||"[]"); }catch{history=[];}
@@ -18,18 +19,19 @@ async function onAction({id,payload}){
   if(id==="copy"){
     const idx=parseInt(payload.idx,10);
     const txt=history[idx];
-    await host.shell.exec(`echo ${JSON.stringify(txt)} | pbcopy`);
+    // printf %s + single-quoting: no trailing newline, and newlines/quotes/$ survive intact
+    await host.shell.exec(`printf %s ${shq(txt)} | pbcopy`);
   }
   if(id==="clear"){ history=[]; await host.store.set("history",history); render(); return; }
   // simulate new copy every tick via shell
   render();
 }
-let b="";process.stdin.on("data",async c=>{b+=c.toString();let i;while((i=b.indexOf("\n"))!==-1){const l=b.slice(0,i).trim();b=b.slice(i+1);if(!l)continue;try{const m=JSON.parse(l);if(m.result!==undefined&&pending.has(m.id)){pending.get(m.id)(m.result);pending.delete(m.id);}else if(m.method==="event"){let p=m.params;if(typeof p==="string")try{p=JSON.parse(p)}catch{}else if(p&&p.value)try{p=JSON.parse(p.value)}catch{};if(p.type==="init") await onInit(); else if(p.type==="action") await onAction(p); send({id:m.id,method:"eventComplete"});}}catch{}}});
-setInterval(async()=>{
-  // poll clipboard via pbpaste every 3s (persistent stays alive)
+let b="";process.stdin.on("data",async c=>{b+=c.toString();let i;while((i=b.indexOf("\n"))!==-1){const l=b.slice(0,i).trim();b=b.slice(i+1);if(!l)continue;try{const m=JSON.parse(l);if(m.result!==undefined&&pending.has(m.id)){pending.get(m.id)(m.result);pending.delete(m.id);}else if(m.method==="event"){let p=m.params;if(typeof p==="string")try{p=JSON.parse(p)}catch{}else if(p&&p.value)try{p=JSON.parse(p.value)}catch{};if(p.type==="init") await onInit(); else if(p.type==="tick") await onTick(); else if(p.type==="action") await onAction(p); send({id:m.id,method:"eventComplete"});}}catch{}}});
+async function onTick(){
+  // host ticks us every 3s (manifest schedule); a reap just means the next tick respawns us
   try{
     const res=JSON.parse(await host.shell.exec("pbpaste"));
     const txt=(res.stdout||"").trim();
     if(txt && history[0]!==txt){ history.unshift(txt); history=history.slice(0,20); await host.store.set("history",history); render(); }
   }catch{}
-},3000);
+}

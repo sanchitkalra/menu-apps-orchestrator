@@ -67,6 +67,10 @@ public actor IPCBridge {
     public init() {}
 
     public func attach(stdin: FileHandle, appId: String, store: Store, shell: ShellGateway, permissions: PermissionManager, onRender: @escaping (RenderPayload) -> Void, onIdle: (() -> Void)? = nil) {
+        // Fresh process, fresh lane: a reap mid-event would otherwise leave isBusy true
+        // forever and every later action would sit in laneB unwritten.
+        self.isBusy = false
+        self.laneB.removeAll()
         self.stdinHandle = stdin
         self.appId = appId
         self.store = store
@@ -112,10 +116,15 @@ public actor IPCBridge {
         write(next)
     }
 
+    // Host no longer owns the child's stdin (reaped/exited): stop writing to it.
+    public func detach() { stdinHandle = nil }
+
     private func write(_ msg: WireMessage) {
         guard let h = stdinHandle else { return }
         if let data = try? JSONEncoder().encode(msg), let line = String(data: data, encoding: .utf8) {
-            h.write(Data((line + "\n").utf8))
+            // throwing write + SIGPIPE ignored: a reaped child gives EPIPE, not a dead host
+            do { try h.write(contentsOf: Data((line + "\n").utf8)) }
+            catch { stdinHandle = nil }
         }
     }
 
