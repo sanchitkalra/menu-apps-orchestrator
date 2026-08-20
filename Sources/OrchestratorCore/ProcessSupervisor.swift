@@ -18,6 +18,8 @@ public actor ProcessSupervisor {
     private var dataRoot: URL?
 
     public init(store: Store, shell: ShellGateway, permissions: PermissionManager, onRender: ((String, RenderPayload) -> Void)? = nil) {
+        // Writing to a reaped child's stdin must surface as EPIPE, not kill the host.
+        signal(SIGPIPE, SIG_IGN)
         self.store = store
         self.shell = shell
         self.permissions = permissions
@@ -73,7 +75,8 @@ public actor ProcessSupervisor {
         let stdoutBuffer = BufferBox()
         stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
-            guard !data.isEmpty, let str = String(data: data, encoding: .utf8) else { return }
+            if data.isEmpty { handle.readabilityHandler = nil; return }  // EOF: child gone, don't spin
+            guard let str = String(data: data, encoding: .utf8) else { return }
             stdoutBuffer.value += str
             while let range = stdoutBuffer.value.range(of: "\n") {
                 let line = String(stdoutBuffer.value[..<range.lowerBound])
@@ -86,6 +89,7 @@ public actor ProcessSupervisor {
         }
         stderrPipe.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
+            if data.isEmpty { handle.readabilityHandler = nil; return }
             if let s = String(data: data, encoding: .utf8), !s.isEmpty {
                 print("[\(appId) stderr] \(s)", terminator: "")
             }
@@ -94,6 +98,7 @@ public actor ProcessSupervisor {
         process.terminationHandler = { p in
             let code = p.terminationStatus
             print("[supervisor] \(appId) exited with \(code)")
+            Task { await bridge.detach() }
             // restart logic for resident
             if manifest.lifecycle == .resident {
                 Task {
@@ -141,6 +146,7 @@ public actor ProcessSupervisor {
         try? await Task.sleep(nanoseconds: 2_000_000_000)
         if proc.isRunning { proc.terminate() }
         apps[appId]?.process = nil
+        await managed.bridge.detach()
     }
 
     private func cancelReaper(appId: String) {
