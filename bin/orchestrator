@@ -1,0 +1,60 @@
+#!/bin/bash
+set -e
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+APPS_DIR="${ORCHESTRATOR_APPS:-$HOME/Orchestrator/Apps}"
+DATA_DIR="${ORCHESTRATOR_DATA:-$HOME/Orchestrator/Data}"
+case "$1" in
+  list)
+    echo "Apps in $APPS_DIR:"
+    ls -1 "$APPS_DIR" 2>/dev/null || echo "(none, using $ROOT/Apps)"
+    ls -1 "$ROOT/Apps" 2>/dev/null
+    ;;
+  create)
+    ID="$2"
+    if [ -z "$ID" ]; then echo "usage: orchestrator create <id> [--template poller|todo]"; exit 1; fi
+    TMPL="${4:-todo}"
+    mkdir -p "$ROOT/Apps/$ID"
+    if [ "$TMPL" = "poller" ]; then
+      cat > "$ROOT/Apps/$ID/manifest.json" <<JSON
+{
+  "id": "$ID",
+  "name": "$ID",
+  "version": "0.1.0",
+  "entrypoint": "node index.js",
+  "lifecycle": "ephemeral",
+  "tile": {"size":"2x1"},
+  "schedule": {"interval":"5m"},
+  "permissions": ["store","fetch","notify"]
+}
+JSON
+      cat > "$ROOT/Apps/$ID/index.js" <<'JS'
+let buf=""; const pending=new Map(); let nid=1;
+function send(m){process.stdout.write(JSON.stringify(m)+"\n");}
+function call(m,p){const id=nid++;return new Promise(r=>{pending.set(id,r);send({id,method:m,params:p})});}
+const host={store:{get:k=>call("host.store.get",{key:k}),set:(k,v)=>call("host.store.set",{key:k,value:JSON.stringify(v)})},fetch:(url)=>call("host.fetch",{url}),notify:(t,b)=>call("host.notify",{title:t,body:b}),render:p=>send({method:"render",params:JSON.stringify(p)})};
+async function onTick(){
+  try{
+    const res=await host.fetch("https://api.github.com/zen");
+    const txt=JSON.parse(res).body || "ok";
+    host.render({tile:{type:"HStack",gap:"md",children:[{type:"Stat",label:"Poller",value:"1"},{type:"Text",text:txt.slice(0,40),variant:"caption",color:"muted"}]},detail:{type:"Text",text:txt,variant:"body"}});
+  }catch(e){ host.render({tile:{type:"Text",text:"error",color:"red"},detail:{type:"Text",text:String(e)}});}
+}
+let b="";process.stdin.on("data",async c=>{b+=c.toString();let i;while((i=b.indexOf("\n"))!==-1){const line=b.slice(0,i).trim();b=b.slice(i+1);if(!line) continue;try{const m=JSON.parse(line);if(m.result!==undefined&&pending.has(m.id)){pending.get(m.id)(m.result);pending.delete(m.id);}else if(m.method==="event"){let p=m.params; if(typeof p==="string")try{p=JSON.parse(p)}catch{} else if(p&&p.value)try{p=JSON.parse(p.value)}catch{}; if(p.type==="init"||p.type==="tick") await onTick(); send({id:m.id,method:"eventComplete"});}}catch{}}});
+JS
+    else
+      cp -r "$ROOT/Apps/todo" "$ROOT/Apps/$ID" 2>/dev/null || true
+    fi
+    echo "created $ROOT/Apps/$ID"
+    ;;
+  logs)
+    APP="$2"
+    if [ -z "$APP" ]; then tail -f /tmp/orchestrator.log 2>/dev/null || tail -f "$DATA_DIR"/*/logs/*.log 2>/dev/null; else cat "/tmp/orchestrator-data/$APP/store.json" 2>/dev/null || cat "$DATA_DIR/$APP/store.json" 2>/dev/null; fi
+    ;;
+  dev)
+    echo "watching $ROOT/Apps (hot reload via FileWatcher, just edit files)"
+    echo "run: .build/debug/orchestrator $ROOT/Apps /tmp/orchestrator-data"
+    ;;
+  *)
+    echo "usage: orchestrator {list|create <id> [--template poller]|logs [app]|dev}"
+    ;;
+esac

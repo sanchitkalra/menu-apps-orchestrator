@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Orchestrator — Tile Preview</title>
+<style>
+  :root { --bg:#f5f5f7; --card:#fff; --border:#e5e5e7; --text:#1d1d1f; --muted:#86868b; --accent:#007aff; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#1c1c1e; --card:#2c2c2e; --border:#38383a; --text:#f5f5f7; --muted:#98989d; } }
+  * { box-sizing:border-box; font-family:-apple-system,BlinkMacSystemFont,"SF Pro",Helvetica,Arial,sans-serif; }
+  body { margin:0; background:var(--bg); color:var(--text); }
+  header { padding:20px 24px 10px; display:flex; align-items:center; gap:12px; }
+  header h1 { font-size:18px; font-weight:600; margin:0; }
+  header span { font-size:12px; color:var(--muted); background:var(--card); border:1px solid var(--border); padding:4px 8px; border-radius:20px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(180px,1fr)); gap:12px; padding:16px 24px; max-width:1100px; }
+  .tile { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:14px; min-height:92px; cursor:pointer; transition:transform .12s, box-shadow .12s; position:relative; overflow:hidden; }
+  .tile:hover { transform:translateY(-1px); box-shadow:0 4px 14px rgba(0,0,0,.08); }
+  .tile.wide { grid-column:span 2; }
+  .tile.small { min-height:92px; }
+  .stat-value { font-size:22px; font-weight:700; letter-spacing:-.02em; }
+  .stat-label { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin-top:2px; }
+  .caption { font-size:12px; color:var(--muted); line-height:1.4; white-space:pre-line; margin-top:8px; }
+  .spark { margin-top:8px; height:22px; }
+  .list-item { display:flex; align-items:center; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border); font-size:13px; }
+  .list-item:last-child { border:0; }
+  .muted { color:var(--muted); }
+  .badge { font-size:11px; padding:2px 6px; border-radius:6px; background:var(--bg); border:1px solid var(--border); }
+  .badge.red { background:#ff3b30; color:#fff; border-color:#ff3b30; }
+  /* detail */
+  .overlay { position:fixed; inset:0; background:rgba(0,0,0,.32); backdrop-filter:blur(8px); display:none; align-items:center; justify-content:center; padding:24px; }
+  .overlay.open { display:flex; }
+  .sheet { background:var(--card); border:1px solid var(--border); border-radius:16px; width:100%; max-width:520px; max-height:80vh; overflow:auto; box-shadow:0 20px 60px rgba(0,0,0,.2); }
+  .sheet-head { padding:16px 16px 12px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; position:sticky; top:0; background:var(--card); border-radius:16px 16px 0 0; }
+  .sheet-body { padding:16px; }
+  .btn { appearance:none; border:1px solid var(--border); background:var(--card); padding:7px 12px; border-radius:8px; font-size:13px; cursor:pointer; }
+  .btn.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .btn.ghost { background:transparent; }
+  .form { display:flex; gap:8px; margin:12px 0; }
+  .form input { flex:1; padding:8px 10px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:13px; }
+  .empty { font-size:12px; color:var(--muted); text-align:center; padding:12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Orchestrator</h1>
+  <span>4 tiles • persistent + interval</span>
+  <span style="margin-left:auto">Live DSL render — no WebView</span>
+</header>
+<div class="grid" id="grid"></div>
+
+<div class="overlay" id="overlay" onclick="if(event.target===this)closeSheet()">
+  <div class="sheet">
+    <div class="sheet-head">
+      <strong id="sheetTitle">Detail</strong>
+      <button class="btn" onclick="closeSheet()">✕</button>
+    </div>
+    <div class="sheet-body" id="sheetBody"></div>
+  </div>
+</div>
+
+<script>
+const todos = [
+  {id:"1", text:"buy milk", done:false},
+  {id:"2", text:"fix cloudflare tunnel", done:false},
+  {id:"3", text:"review Sentry issues", done:true},
+];
+
+function todoTileView() {
+  const remaining = todos.filter(t=>!t.done).length;
+  return { type:"HStack", gap:"md", children:[
+    {type:"Stat", label:"Todos", value: `${remaining} left`},
+    {type:"Text", text: todos.slice(0,2).map(t=>`• ${t.text}`).join("\n"), variant:"caption", color:"muted"}
+  ]};
+}
+function todoDetailView() {
+  return { type:"VStack", gap:"md", children:[
+    {type:"Text", text:"Todos", variant:"title"},
+    {type:"Form", fields:[{name:"text", placeholder:"Add todo...", type:"text"}], onSubmit:{id:"add"}},
+    {type:"List", items: todos.map(t=>({id:t.id, title:t.text, subtitle:t.done?"done":undefined, right:t.done?"✓":"○", onClick:{id:"toggle", payload:{id:t.id}}}))},
+    ...(todos.filter(t=>t.done).length ? [{type:"Button", label:"Clear done", variant:"ghost", onClick:{id:"clearDone"}}] : [])
+  ]};
+}
+
+const tiles = [
+  { id:"todo", name:"Todos", size:"wide", tile: todoTileView(), detail: todoDetailView() },
+  { id:"sentry", name:"Sentry", size:"", tile: {type:"HStack", gap:"md", children:[
+    {type:"Stat", label:"Sentry", value:"3 new", color:"red"},
+    {type:"VStack", gap:"sm", children:[
+      {type:"Text", text:"TypeError: checkout • 12 events", variant:"caption"},
+      {type:"Text", text:"+2 in last hour", variant:"caption", color:"muted"}
+    ]}
+  ]}, detail: {type:"VStack", gap:"md", children:[
+    {type:"Text", text:"Sentry — Last 24h", variant:"title"},
+    {type:"List", items:[
+      {id:"a", title:"TypeError in /api/checkout", subtitle:"12 events • 4 users", right:"P1"},
+      {id:"b", title:"Timeout in /api/search", subtitle:"7 events • 2 users", right:"P2"},
+      {id:"c", title:"Failed to fetch /status", subtitle:"3 events • 1 user", right:"P3"},
+    ]}
+  ]}},
+  { id:"github", name:"GitHub", tile: {type:"HStack", gap:"md", children:[
+    {type:"Stat", label:"GitHub", value:"5"},
+    {type:"Text", text:"pulls • 2 mentions", variant:"caption", color:"muted"}
+  ]}, detail: {type:"List", items:[
+    {id:"1", title:"feat: add orchestrator IPC", subtitle:"you • 2 comments"},
+    {id:"2", title:"fix: tile diff flicker", subtitle:"reviewer requested changes"},
+  ]}},
+  { id:"aws", name:"AWS Env", size:"", tile: {type:"VStack", gap:"sm", children:[
+    {type:"HStack", gap:"sm", children:[
+      {type:"Icon", name:"check"},
+      {type:"Text", text:"prod • us-east-1", variant:"body"},
+      {type:"Text", text:"●", color:"green"}
+    ]},
+    {type:"Text", text:"tunnel: active • port 8080 → 3000", variant:"caption", color:"muted"},
+    {type:"Progress", value:0.72}
+  ]}, detail: {type:"VStack", gap:"md", children:[
+    {type:"Text", text:"AWS Env — Resident", variant:"title"},
+    {type:"Text", text:"Never killed • owns cloudflared + kubectl port-forward", variant:"caption", color:"muted"},
+    {type:"Button", label:"Login prod", variant:"primary", onClick:{id:"login"}},
+    {type:"Button", label:"Stop tunnel", variant:"ghost", onClick:{id:"stop"}},
+  ]}},
+];
+
+function elForNode(n) {
+  if(n.type==="HStack") {
+    const d=document.createElement("div"); d.style.display="flex"; d.style.gap=n.gap==="sm"?"6px":"10px"; d.style.alignItems="flex-start";
+    n.children.forEach(c=>d.appendChild(elForNode(c))); return d;
+  }
+  if(n.type==="VStack") {
+    const d=document.createElement("div"); d.style.display="flex"; d.style.flexDirection="column"; d.style.gap=n.gap==="sm"?"6px":"10px";
+    n.children.forEach(c=>d.appendChild(elForNode(c))); return d;
+  }
+  if(n.type==="Text") {
+    const d=document.createElement("div"); d.textContent=n.text;
+    d.style.fontSize=n.variant==="title"?"15px":n.variant==="caption"?"12px":"13px";
+    d.style.fontWeight=n.variant==="title"?"600":"400";
+    d.style.whiteSpace="pre-line";
+    if(n.color==="muted") d.style.color="var(--muted)"; if(n.color==="red") d.style.color="#ff3b30"; if(n.color==="green") d.style.color="#30d158";
+    return d;
+  }
+  if(n.type==="Stat") {
+    const w=document.createElement("div");
+    const v=document.createElement("div"); v.className="stat-value"; v.textContent=n.value; if(n.color==="red") v.style.color="#ff3b30";
+    const l=document.createElement("div"); l.className="stat-label"; l.textContent=n.label;
+    w.appendChild(v); w.appendChild(l); return w;
+  }
+  if(n.type==="List") {
+    const w=document.createElement("div");
+    n.items.forEach(it=>{
+      const row=document.createElement("div"); row.className="list-item";
+      const left=document.createElement("div");
+      const t=document.createElement("div"); t.textContent=it.title; t.style.fontWeight="500";
+      left.appendChild(t);
+      if(it.subtitle){ const s=document.createElement("div"); s.textContent=it.subtitle; s.className="muted"; s.style.fontSize="12px"; left.appendChild(s); }
+      row.appendChild(left);
+      if(it.right){ const r=document.createElement("span"); r.className="badge"; if(it.right==="P1") r.classList.add("red"); r.textContent=it.right; row.appendChild(r); }
+      if(it.onClick) row.style.cursor="pointer";
+      w.appendChild(row);
+    }); return w;
+  }
+  if(n.type==="Progress") {
+    const w=document.createElement("div"); w.style.height="6px"; w.style.background="var(--bg)"; w.style.border="1px solid var(--border)"; w.style.borderRadius="99px"; w.style.overflow="hidden"; w.style.marginTop="6px";
+    const f=document.createElement("div"); f.style.width=(n.value*100)+"%"; f.style.height="100%"; f.style.background="var(--accent)"; w.appendChild(f); return w;
+  }
+  if(n.type==="Icon") { const s=document.createElement("span"); s.textContent="●"; s.style.color="var(--accent)"; return s; }
+  if(n.type==="Button") { const b=document.createElement("button"); b.className="btn "+(n.variant==="primary"?"primary":"ghost"); b.textContent=n.label; return b; }
+  if(n.type==="Form") {
+    const w=document.createElement("div"); w.className="form";
+    const inp=document.createElement("input"); inp.placeholder=n.fields[0].placeholder;
+    const btn=document.createElement("button"); btn.className="btn primary"; btn.textContent="Add";
+    btn.onclick=()=>{ const v=inp.value.trim(); if(!v) return; todos.push({id:Date.now().toString(), text:v, done:false}); inp.value=""; rerender(); openSheet("todo"); };
+    w.appendChild(inp); w.appendChild(btn); return w;
+  }
+  const d=document.createElement("div"); d.textContent="["+n.type+"]"; return d;
+}
+
+function rerender(){
+  const todo = tiles.find(t=>t.id==="todo");
+  todo.tile = todoTileView(); todo.detail = todoDetailView();
+  renderGrid();
+}
+
+function renderGrid(){
+  const g=document.getElementById("grid"); g.innerHTML="";
+  tiles.forEach(t=>{
+    const card=document.createElement("div"); card.className="tile "+(t.size==="wide"?"wide":"");
+    card.appendChild(elForNode(t.tile));
+    card.onclick=()=>openSheet(t.id);
+    g.appendChild(card);
+  });
+}
+
+function openSheet(id){
+  const t=tiles.find(x=>x.id===id); if(!t) return;
+  document.getElementById("sheetTitle").textContent = t.name + " — Detail";
+  const body=document.getElementById("sheetBody"); body.innerHTML="";
+  body.appendChild(elForNode(t.detail));
+  // wire todo toggle
+  if(id==="todo"){
+    // add click handlers for list rows (toggle)
+    body.querySelectorAll(".list-item").forEach((row,i)=>{
+      row.onclick=()=>{ const todo=todos[i]; if(todo){ todo.done=!todo.done; rerender(); body.innerHTML=""; body.appendChild(elForNode(todoDetailView())); // re-wire
+        // reattach handlers recursively
+        body.querySelectorAll(".list-item").forEach((r,j)=> r.onclick=()=>{ todos[j].done=!todos[j].done; rerender(); openSheet("todo"); });
+        const btn=body.querySelector(".btn.ghost"); if(btn) btn.onclick=()=>{ for(let k=todos.length-1;k>=0;k--) if(todos[k].done) todos.splice(k,1); rerender(); openSheet("todo"); };
+      }};
+    });
+    const clearBtn=body.querySelector(".btn.ghost");
+    if(clearBtn) clearBtn.onclick=()=>{ for(let k=todos.length-1;k>=0;k--) if(todos[k].done) todos.splice(k,1); rerender(); openSheet("todo"); };
+  }
+  document.getElementById("overlay").classList.add("open");
+}
+function closeSheet(){ document.getElementById("overlay").classList.remove("open"); }
+
+renderGrid();
+</script>
+</body>
+</html>

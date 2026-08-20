@@ -1,0 +1,9 @@
+.build/
+*.xcodeproj/
+*.xcworkspace/
+DerivedData/
+.DS_Store
+/tmp/
+Data/
+node_modules/
+.env

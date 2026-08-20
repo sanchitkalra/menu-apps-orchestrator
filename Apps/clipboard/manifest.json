@@ -1,0 +1,9 @@
+{
+  "id": "clipboard",
+  "name": "Clipboard",
+  "version": "0.1.0",
+  "entrypoint": "node index.js",
+  "lifecycle": "persistent",
+  "tile": {"size":"2x1"},
+  "permissions": ["store","shell.exec"]
+}

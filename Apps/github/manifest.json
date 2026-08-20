@@ -1,0 +1,11 @@
+{
+  "id": "github",
+  "name": "GitHub",
+  "version": "0.1.0",
+  "entrypoint": "node index.js",
+  "lifecycle": "ephemeral",
+  "tile": { "size": "2x1" },
+  "schedule": { "interval": "5m", "onOverlap": "skip" },
+  "permissions": ["store", "fetch", "notify", "secrets"],
+  "enabled": true
+}

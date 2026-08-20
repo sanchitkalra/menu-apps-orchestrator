@@ -1,0 +1,10 @@
+{
+  "id": "sentry",
+  "name": "Sentry",
+  "version": "0.1.0",
+  "entrypoint": "node index.js",
+  "lifecycle": "ephemeral",
+  "tile": {"size":"2x1"},
+  "schedule": {"interval":"5m"},
+  "permissions": ["store","fetch","notify"]
+}

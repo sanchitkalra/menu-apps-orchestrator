@@ -1,0 +1,10 @@
+{
+  "id": "sql",
+  "name": "SQL Metrics",
+  "version": "0.1.0",
+  "entrypoint": "node index.js",
+  "lifecycle": "ephemeral",
+  "tile": {"size":"2x2"},
+  "schedule": {"interval":"15m"},
+  "permissions": ["store","fetch","secrets"]
+}
